@@ -1,9 +1,0 @@
-[object Object][object Object][object Object]{
-  "message": "Timeout exceeded while waiting for event",
-  "stack": "TimeoutError: Timeout exceeded while waiting for event\n    at Timeout.<anonymous> (/Users/charlzyx/Dev/spider/node_modules/puppeteer/lib/helper.js:195:24)\n    at listOnTimeout (internal/timers.js:531:17)\n    at processTimers (internal/timers.js:475:7)\n  -- ASYNC --\n    at Page.<anonymous> (/Users/charlzyx/Dev/spider/node_modules/puppeteer/lib/helper.js:110:27)\n    at feeder (/Users/charlzyx/Dev/spider/index.js:89:16)\n    at processTicksAndRejections (internal/process/task_queues.js:89:5)\n    at async loopAList (/Users/charlzyx/Dev/spider/index.js:113:5)\n    at async boot (/Users/charlzyx/Dev/spider/index.js:149:3)",
-  "time": "Wed May 22 2019 21:09:03 GMT+0800 (GMT+08:00)"
-}{
-  "message": "Timeout exceeded while waiting for event",
-  "stack": "TimeoutError: Timeout exceeded while waiting for event\n    at Timeout.<anonymous> (/Users/charlzyx/Dev/spider/node_modules/puppeteer/lib/helper.js:195:24)\n    at listOnTimeout (internal/timers.js:531:17)\n    at processTimers (internal/timers.js:475:7)\n  -- ASYNC --\n    at Page.<anonymous> (/Users/charlzyx/Dev/spider/node_modules/puppeteer/lib/helper.js:110:27)\n    at feeder (/Users/charlzyx/Dev/spider/index.js:89:16)\n    at processTicksAndRejections (internal/process/task_queues.js:89:5)\n    at async loopAList (/Users/charlzyx/Dev/spider/index.js:113:5)\n    at async boot (/Users/charlzyx/Dev/spider/index.js:149:3)",
-  "time": "Wed May 22 2019 21:14:57 GMT+0800 (GMT+08:00)"
-}
