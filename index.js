@@ -26,29 +26,27 @@ const config = {
 };
 
 const errorHandler = async (e, pageConfig) => {
-  const { pageRef, lastPage, currentPage, index } = pageConfig;
-  const info = { page: index, time: new Date(), message: e.message, stack: e.stack, config: { ...pageConfig, pageRef: null } };
+  const { pageRef, start, end, pageIndex } = pageConfig;
+  const info = { page: pageIndex, time: new Date(), message: e.message, stack: e.stack, config: { ...pageConfig, pageRef: null } };
   await fs.appendFileSync(logPath, `${new Date()}--${JSON.stringify(info, null, 2)}\n`);
-  pageConfig.currentPage = lastPage || currentPage;
   // 休息1s再继续
   await pageRef.waitFor(1000);
-  return begin(pageRef, pageConfig);
+  return begin(pageRef, pageIndex);
 }
 
 
-
-const pageParser = async (page) => {
-  // 第 1 页 共10508页 共157614条
-  const info = await page.$eval(selectors.content, el => el.innerText);
-  const pageSize = 15;
-  const pageNo = /\d+/.exec(/第\s?\d+\s?页/.exec(info)[0]);
-  const pageCount = /\d+/.exec(/共\s?\d+\s?页/.exec(info)[0]);
-  const dataCount = /\d+/.exec(/共\s?\d+\s?条/.exec(info)[0]);
-  return { pageSize, pageNo, pageCount, dataCount };
-}
+// const pageParser = async (page) => {
+//   // 第 1 页 共10508页 共157614条
+//   const info = await page.$eval(selectors.content, el => el.innerText);
+//   const pageSize = 15;
+//   const pageNo = /\d+/.exec(/第\s?\d+\s?页/.exec(info)[0]);
+//   const pageCount = /\d+/.exec(/共\s?\d+\s?页/.exec(info)[0]);
+//   const dataCount = /\d+/.exec(/共\s?\d+\s?条/.exec(info)[0]);
+//   return { pageSize, pageNo, pageCount, dataCount };
+// }
 
 const got = async (a, page, conf) => {
-  const { fileName, index } = conf;
+  const { fileName, pageIndex } = conf;
   try {
     const innerText = await a.getProperty('innerText');
     const id = /\d+/.exec(innerText)[0];
@@ -63,10 +61,16 @@ const got = async (a, page, conf) => {
     info.unshift(id);
     await fs.appendFileSync(fileName, info.join(','), { encoding: 'utf-8' });
     await fs.appendFileSync(fileName, '\n', { encoding: 'utf-8' });
-    console.log(`${new Date()} [${index}]-${id}---${name}\n`);
-    await fs.appendFileSync(logPath, `[${index}]-${id}---${name}\n`);
+
+
+    config.pages[pageIndex].start = +id + 1;
+
+    console.log(`${new Date()} [${pageIndex}]-${id}---${name}\n`);
+    await fs.appendFileSync(logPath, `[${pageIndex}]-${id}---${name}\n`);
+
     await page.click(selectors.backBtn);
     await page.waitFor(500);
+
     return true;
   } catch (e) {
     return errorHandler(e, conf);
@@ -81,10 +85,11 @@ const typePage = async (to, page) => {
   await page.click(selectors.goBtn);
 }
 
-const jumpTo = async (page, conf) => {
+const jumpTo = async (page, index) => {
   try {
-    const { currentPage } = conf;
-    await typePage(currentPage, page);
+    const { start } = config.pages[index];
+    const to = Math.ceil(start / 15);
+    await typePage(to, page);
     await page.waitForResponse(resp => /.+\.jsp/.test(resp.url()));
     await page.waitFor(300);
   } catch (e) {
@@ -92,33 +97,26 @@ const jumpTo = async (page, conf) => {
   }
 }
 
-const loopAList = async (page, conf) => {
-  const { startPage, endPage, currentPage, lastPage, lastIndex, index } = conf;
+const loopAList = async (page, index) => {
+  const conf = config.pages[index];
 
   const list = await page.$$(selectors.alist);
 
   const len = list.length;
-  let i = lastIndex || 0;
+  let i = (conf.start % 15) - 1;
 
   while (i < len) {
     const alist = await page.$$(selectors.alist);
 
     await got(alist[i], page, conf);
-
-    conf.lastIndex = i;
     i++;
   }
 
-  conf.lastIndex = 0;
-  conf.currentPage = currentPage + 1;
-  conf.lastPage = currentPage;
 
-  config.pages[index] = conf;
-
-  if (conf.currentPage <= endPage) {
+  if (conf.start <= conf.end) {
     try {
-      await jumpTo(page, conf);
-      return loopAList(page, conf);
+      await jumpTo(page, index);
+      return loopAList(page, index);
     } catch (e) {
       return errorHandler(e, conf);
     }
@@ -127,16 +125,16 @@ const loopAList = async (page, conf) => {
   }
 };
 
-const begin = async (page, conf) => {
+const begin = async (page, index) => {
   await page.goto(config.website, { waitUntil: 'networkidle0' });
   await page.waitFor(500);
-  await jumpTo(page, conf);
-  await loopAList(page, conf);
+  await jumpTo(page, index);
+  await loopAList(page, index);
 };
 
 var boot = async (conf = {}) => {
   config.bootTime = new Date();
-  const { startPage = 1, endPage = 10, tabCount = 3 } = conf;
+  const { startId = 1, endId = 100, tabCount = 1 } = conf;
   const browser = await pptr.launch({ headless: true });
   const pages = [];
   let pageIndex = 0;
@@ -147,22 +145,21 @@ var boot = async (conf = {}) => {
     pageIndex++;
   }
 
-  const per = Math.ceil((endPage - startPage + 1) / tabCount);
-  const pagesConfig = config.pages = pages.map((p, index) => {
-    const start = startPage + per * index;
-    const end = Math.min(startPage + per * (index + 1) - 1, endPage);
+  const per = Math.ceil((endId - startId + 1) / tabCount);
+  config.pages = pages.map((p, index) => {
+    const start = startId + (per * index);
+    const end = Math.min(start + per, endId);
     return {
-      index,
-      fileName: filePath(start, end),
+      pageIndex: index,
       pageRef: pages[index],
-      bootTime: new Date().toLocaleString(),
-      startPage: start,
-      endPage: end,
-      currentPage: start,
+      fileName: filePath(start, end),
+      bootTime: new Date(),
+      start,
+      end,
     }
   });
 
-  await Promise.all(pages.map((page, index) => begin(page, pagesConfig[index])));
+  await Promise.all(pages.map((page, index) => begin(page, index)));
   console.log('-------------------------------------');
   console.log('ALL DONE!');
   console.log(`--${config.bootTime}--${new Date().toString()}--`);
