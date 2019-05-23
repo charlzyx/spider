@@ -93,7 +93,7 @@ const jumpTo = async (page, index) => {
     await page.waitForResponse(resp => /.+\.jsp/.test(resp.url()));
     await page.waitFor(300);
   } catch (e) {
-    return errorHandler(e, conf);
+    return errorHandler(e, config.pages[index]);
   }
 }
 
@@ -103,7 +103,7 @@ const loopAList = async (page, index) => {
   const list = await page.$$(selectors.alist);
 
   const len = list.length;
-  let i = (conf.start % 15) - 1;
+  let i = (conf.start - 1) % 15;
 
   while (i < len) {
     const alist = await page.$$(selectors.alist);
@@ -134,7 +134,7 @@ const begin = async (page, index) => {
 
 var boot = async (conf = {}) => {
   config.bootTime = new Date();
-  const { startId = 1, endId = 100, tabCount = 1 } = conf;
+  const { startId = 1, endId = 3000, tabCount = 2 } = conf;
   const browser = await pptr.launch({ headless: true });
   const pages = [];
   let pageIndex = 0;
