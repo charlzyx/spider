@@ -5,6 +5,48 @@ const path = require('path');
 const filePath = (startPage, endPage) => path.resolve('./', `${startPage}_${endPage}.csv`);
 const logPath = path.resolve('./', `.log`);
 const ONEMIN = 1000 * 60;
+const BASE = [
+  '生产者名称',
+  '社会信用代码(身份证号码)',
+  '法定代表人(负责人)',
+  '住所',
+  '生产地址',
+  '食品类别',
+  '许可证编号',
+  '日常监督管理机构',
+  '日常监督管理人员',
+  '发证机关',
+  '签发人',
+  '发证日期',
+  '有效期至',
+  '许可明细',
+  // '食品、食品添加剂类别',
+  // '类别编号',
+  // '类别名称',
+  // '品种明细',
+  // '备注',
+  // '外设仓库地址',
+];
+
+const base = [...BASE];
+base.pop();
+
+const COLS = [
+  'ID',
+  ...base,
+];
+
+let dIndex = 0;
+while (dIndex < 10) {
+  COLS.push(`食品、食品添加剂类别 ${dIndex}`),
+  COLS.push(`类别编号 ${dIndex}`),
+  COLS.push(`类别名称 ${dIndex}`),
+  COLS.push(`品种明细 ${dIndex}`),
+  COLS.push(`备注 ${dIndex}`),
+  dIndex++;
+}
+
+
 
 
 const selectors = {
@@ -34,16 +76,40 @@ const errorHandler = async (e, pageConfig) => {
   return begin(pageRef, pageIndex);
 }
 
+const detailParser = (detail) => {
+  const cols = detail.split('\n').filter(i => !!i && i.indexOf('外设仓库地址') === -1);
+  // '食品、食品添加剂类别',
+  // '类别编号',
+  // '类别名称',
+  // '品种明细',
+  // '备注',
+  const groups = cols.map(col => col.split('：')[1]);
+  return groups;
+};
 
-// const pageParser = async (page) => {
-//   // 第 1 页 共10508页 共157614条
-//   const info = await page.$eval(selectors.content, el => el.innerText);
-//   const pageSize = 15;
-//   const pageNo = /\d+/.exec(/第\s?\d+\s?页/.exec(info)[0]);
-//   const pageCount = /\d+/.exec(/共\s?\d+\s?页/.exec(info)[0]);
-//   const dataCount = /\d+/.exec(/共\s?\d+\s?条/.exec(info)[0]);
-//   return { pageSize, pageNo, pageCount, dataCount };
-// }
+const tableParser = (tds) => {
+  // 移除第一行 食品生产许可获证企业(SC)
+  tds.splice(0, 1);
+  // 移除最后三个 包括 注: 这行和 返回这一行
+  tds.splice(tds.length - 4, 3);
+  const table = {};
+  tds.forEach((td, index) => {
+    const isKey = index % 2 === 0;
+    if (isKey) {
+      table[td] = null;
+    } else {
+      table[tds[index - 1]] = td;
+    }
+  });
+  const list = BASE.map(key => {
+    return table[key];
+  });
+  const detailList = detailParser(table.许可明细);
+  // 清理最后一个生产明细, 被下方代替
+  list.pop();
+  const all = list.concat(detailList);
+  return all;
+};
 
 const got = async (a, page, conf) => {
   const { fileName, pageIndex } = conf;
@@ -55,21 +121,13 @@ const got = async (a, page, conf) => {
     await page.waitForResponse(resp => /.+\.jsp/.test(resp.url()));
     // 给一点点渲染时间
     await page.waitFor(200);
-    let info = await page.$$eval(selectors.info, tds => {
-      return tds.map(td => td.innerText.replace(/\,/g, '__comma__').replace(/\n/g, '__enter__'));
+    const list = await page.$$eval(selectors.info, tds => {
+      return tds.map(td => td.innerText.replace('/', '无').replace('\\', '无').replace('"', ''));
     });
-    info = info.filter(i => !!i);
-    // 移除[注] [xxxxx] 那两列
-    info.pop();
-    info.pop();
-    // 第一行设置为id
-    info[0] = id;
-    const last = info[info.length - 1];
-    info.pop();
-    const detail = last.split(/：|:|__enter__|\//);
-    info = info.concat(detail);
-    await fs.appendFileSync(fileName, info.join(','), { encoding: 'utf-8' });
-    await fs.appendFileSync(fileName, '\n', { encoding: 'utf-8' });
+
+    const table = tableParser(list);
+
+    await fs.appendFileSync(fileName, id + ',' + table.join(',') + ',\n', { encoding: 'utf-8' });
 
     conf.start = config.pages[pageIndex].start = +id + 1;
 
@@ -113,13 +171,17 @@ const loopAList = async (page, index) => {
   let i = (conf.start - 1) % 15;
 
   while (i < len) {
-    const alist = await page.$$(selectors.alist);
-
-    await got(alist[i], page, conf);
-    i++;
+    try {
+      const alist = await page.$$(selectors.alist);
+      const a = alist[i];
+      i++;
+      await got(a, page, conf);
+    } catch (e) {
+      return errorHandler(e, config.pages[index]);
+    }
   }
 
-
+  console.log('-----------', conf.start, '--------', conf.end);
   if (conf.start <= conf.end) {
     try {
       await jumpTo(page, index);
@@ -141,7 +203,7 @@ const begin = async (page, index) => {
 
 var boot = async (conf = {}) => {
   config.bootTime = new Date();
-  const { startId = 1, endId = 120, tabCount = 1 } = conf;
+  const { startId = 1, endId = 60, tabCount = 1 } = conf;
   const browser = await pptr.launch({ headless: true });
   const pages = [];
   let pageIndex = 0;
@@ -164,6 +226,9 @@ var boot = async (conf = {}) => {
       start,
       end,
     }
+  });
+  config.pages.forEach((p) => {
+    fs.writeFileSync(p.fileName, COLS.join(',') + ',\n', { encoding: 'utf-8' })
   });
 
   await Promise.all(pages.map((page, index) => begin(page, index)));
