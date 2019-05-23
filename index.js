@@ -55,15 +55,23 @@ const got = async (a, page, conf) => {
     await page.waitForResponse(resp => /.+\.jsp/.test(resp.url()));
     // 给一点点渲染时间
     await page.waitFor(200);
-    const info = await page.$$eval(selectors.info, tds => {
+    let info = await page.$$eval(selectors.info, tds => {
       return tds.map(td => td.innerText.replace(/\,/g, '__comma__').replace(/\n/g, '__enter__'));
     });
-    info.unshift(id);
+    info = info.filter(i => !!i);
+    // 移除[注] [xxxxx] 那两列
+    info.pop();
+    info.pop();
+    // 第一行设置为id
+    info[0] = id;
+    const last = info[info.length - 1];
+    info.pop();
+    const detail = last.split(/：|:|__enter__|\//);
+    info = info.concat(detail);
     await fs.appendFileSync(fileName, info.join(','), { encoding: 'utf-8' });
     await fs.appendFileSync(fileName, '\n', { encoding: 'utf-8' });
 
-
-    config.pages[pageIndex].start = +id + 1;
+    conf.start = config.pages[pageIndex].start = +id + 1;
 
     console.log(`${new Date()} [${pageIndex}]-${id}---${name}\n`);
     await fs.appendFileSync(logPath, `[${pageIndex}]-${id}---${name}\n`);
@@ -101,7 +109,6 @@ const loopAList = async (page, index) => {
   const conf = config.pages[index];
 
   const list = await page.$$(selectors.alist);
-
   const len = list.length;
   let i = (conf.start - 1) % 15;
 
@@ -134,7 +141,7 @@ const begin = async (page, index) => {
 
 var boot = async (conf = {}) => {
   config.bootTime = new Date();
-  const { startId = 1, endId = 3000, tabCount = 2 } = conf;
+  const { startId = 1, endId = 120, tabCount = 1 } = conf;
   const browser = await pptr.launch({ headless: true });
   const pages = [];
   let pageIndex = 0;
@@ -148,7 +155,7 @@ var boot = async (conf = {}) => {
   const per = Math.ceil((endId - startId + 1) / tabCount);
   config.pages = pages.map((p, index) => {
     const start = startId + (per * index);
-    const end = Math.min(start + per, endId);
+    const end = Math.min(start + per - 1, endId);
     return {
       pageIndex: index,
       pageRef: pages[index],
